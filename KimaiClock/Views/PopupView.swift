@@ -67,6 +67,11 @@ struct PopupView: View {
             .store(in: &subscriptionManager.cancellables)
     }
 
+    /// Tags of a remote timer may be missing from the fetched list -> show them too
+    private var tagOptions: [String] {
+        apiManager.availableTags + apiManager.sessionTags.filter { !apiManager.availableTags.contains($0) }
+    }
+
     private var shouldShowDescription: Bool {
         apiManager.activeActivity != nil || isTimerRunning
     }
@@ -297,8 +302,7 @@ struct PopupView: View {
                         .foregroundStyle(.secondary)
 
                     Menu {
-                        // tags of a remote timer may be missing from the fetched list -> show them too
-                        ForEach(apiManager.availableTags + apiManager.sessionTags.filter { !apiManager.availableTags.contains($0) }, id: \.self) { tag in
+                        ForEach(tagOptions, id: \.self) { tag in
                             Toggle(tag, isOn: Binding(
                                 get: { apiManager.sessionTags.contains(tag) },
                                 set: { isOn in
@@ -316,8 +320,8 @@ struct PopupView: View {
                              ? NSLocalizedString("select_tags", comment: "")
                              : apiManager.sessionTags.joined(separator: ", "))
                     }
-                    // same rules as the description
-                    .disabled(timerModel.isActive == true || apiManager.activeActivity == nil)
+                    // same rules as the description; an empty menu would close the popover right away
+                    .disabled(timerModel.isActive == true || apiManager.activeActivity == nil || tagOptions.isEmpty)
                     .onAppear {
                         apiManager.fetchTags()
                     }

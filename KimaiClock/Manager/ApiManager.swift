@@ -325,7 +325,8 @@ class ApiManager: ObservableObject {
     }
 
     func fetchTags() {
-        getList("/api/tags/find", [], of: Tag.self)
+        // Kimai returns an empty list without a name filter; an empty term matches all visible tags
+        getList("/api/tags/find", [URLQueryItem(name: "name", value: "")], of: Tag.self)
             .map { $0.map(\.name) }
             .assign(to: &$availableTags)
     }

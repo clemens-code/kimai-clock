@@ -123,7 +123,8 @@ final class ApiManagerSyncTests: XCTestCase {
         MockURLProtocol.requestHandler = { request in
             interceptedRequest = request
             // one project activity and one global activity
-            let json = #"[{"id": 3, "name": "Coding", "parentTitle": "Alpha", "project": 7}, {"id": 9, "name": "Support"}]"#
+            let json = #"[{"id": 3, "name": "Coding", "parentTitle": "Alpha", "project": 7}, "#
+                + #"{"id": 9, "name": "Support"}]"#
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (response, Data(json.utf8))
         }
@@ -154,59 +155,6 @@ final class ApiManagerSyncTests: XCTestCase {
             }
             .store(in: &cancellables)
         wait(for: [expectation], timeout: 2)
-    }
-
-    // MARK: - Tags
-
-    func testFetchTagsLoadsNames() {
-        var interceptedRequest: URLRequest?
-        MockURLProtocol.requestHandler = { request in
-            interceptedRequest = request
-            let json = #"[{"id": 1, "name": "billable", "color": null}, {"id": 2, "name": "urgent"}]"#
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            return (response, Data(json.utf8))
-        }
-
-        let expectation = expectation(description: "tags")
-        apiManager.$availableTags
-            .dropFirst()
-            .sink { tags in
-                XCTAssertEqual(tags, ["billable", "urgent"])
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        apiManager.fetchTags()
-        wait(for: [expectation], timeout: 2)
-
-        XCTAssertEqual(interceptedRequest?.url?.path, "/api/tags/find")
-    }
-
-    func testStartActivitySendsSelectedTags() {
-        var interceptedRequest: URLRequest?
-        apiManager.activeActivity = coding
-        apiManager.sessionTags = ["billable", "urgent"]
-        MockURLProtocol.requestHandler = { request in
-            interceptedRequest = request
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            return (response, Data(#"{"id": 5}"#.utf8))
-        }
-
-        let expectation = expectation(description: "start")
-        apiManager.startActivity()
-            .sink { _ in expectation.fulfill() }
-            .store(in: &cancellables)
-        wait(for: [expectation], timeout: 2)
-
-        XCTAssertEqual(interceptedRequest?.jsonBody?["tags"] as? String, "billable,urgent")
-        // tags survive the start so a resume after pause sends them again
-        XCTAssertEqual(apiManager.sessionTags, ["billable", "urgent"])
-    }
-
-    func testChangingActivityClearsTags() {
-        apiManager.activeActivity = coding
-        apiManager.sessionTags = ["billable"]
-        apiManager.activeActivity = Activity(id: 3, name: "Meeting", parentTitle: "Intern", project: 5, color: nil, timesheetId: nil)
-        XCTAssertTrue(apiManager.sessionTags.isEmpty)
     }
 
     // MARK: - Failure paths
@@ -336,5 +284,64 @@ final class ApiManagerSyncTests: XCTestCase {
         cancellable.cancel()
 
         XCTAssertEqual(apiManager.serverVersion, "Server: unsupported")
+    }
+}
+
+// MARK: - Tags
+
+extension ApiManagerSyncTests {
+    func testFetchTagsLoadsNames() {
+        var interceptedRequest: URLRequest?
+        MockURLProtocol.requestHandler = { request in
+            interceptedRequest = request
+            let json = #"[{"id": 1, "name": "billable", "color": null}, {"id": 2, "name": "urgent"}]"#
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(json.utf8))
+        }
+
+        let expectation = expectation(description: "tags")
+        apiManager.$availableTags
+            .dropFirst()
+            .sink { tags in
+                XCTAssertEqual(tags, ["billable", "urgent"])
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+        apiManager.fetchTags()
+        wait(for: [expectation], timeout: 2)
+
+        XCTAssertEqual(interceptedRequest?.url?.path, "/api/tags/find")
+        let query = URLComponents(url: interceptedRequest!.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(query.first { $0.name == "name" }?.value, "")
+    }
+
+    func testStartActivitySendsSelectedTags() {
+        var interceptedRequest: URLRequest?
+        apiManager.activeActivity = coding
+        apiManager.sessionTags = ["billable", "urgent"]
+        MockURLProtocol.requestHandler = { request in
+            interceptedRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"id": 5}"#.utf8))
+        }
+
+        let expectation = expectation(description: "start")
+        apiManager.startActivity()
+            .sink { _ in expectation.fulfill() }
+            .store(in: &cancellables)
+        wait(for: [expectation], timeout: 2)
+
+        XCTAssertEqual(interceptedRequest?.jsonBody?["tags"] as? String, "billable,urgent")
+        // tags survive the start so a resume after pause sends them again
+        XCTAssertEqual(apiManager.sessionTags, ["billable", "urgent"])
+    }
+
+    func testChangingActivityClearsTags() {
+        apiManager.activeActivity = coding
+        apiManager.sessionTags = ["billable"]
+        apiManager.activeActivity = Activity(
+            id: 3, name: "Meeting", parentTitle: "Intern", project: 5, color: nil, timesheetId: nil
+        )
+        XCTAssertTrue(apiManager.sessionTags.isEmpty)
     }
 }
