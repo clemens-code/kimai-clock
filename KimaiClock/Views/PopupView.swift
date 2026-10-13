@@ -26,6 +26,7 @@ struct PopupView: View {
     @State private var showEditDescriptionAlert = false
     @State private var timesheetDescription = ""
     @State private var contextMenuActionTaken = false
+    @State private var isContextMenuOpen = false
 
     let closePopup: () -> Void
     let startRemoteTimerProcess: (Double) -> Void
@@ -65,6 +66,11 @@ struct PopupView: View {
                 projectActivities = activities
             }
             .store(in: &subscriptionManager.cancellables)
+    }
+
+    /// Tags of a remote timer may be missing from the fetched list -> show them too
+    private var tagOptions: [String] {
+        apiManager.availableTags + apiManager.sessionTags.filter { !apiManager.availableTags.contains($0) }
     }
 
     private var shouldShowDescription: Bool {
@@ -291,6 +297,34 @@ struct PopupView: View {
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         // editable before start and while paused (applies to the resumed timesheet)
                         .disabled(timerModel.isActive == true || apiManager.activeActivity == nil)
+
+                    Text(NSLocalizedString("tags_label", comment: ""))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Menu {
+                        ForEach(tagOptions, id: \.self) { tag in
+                            Toggle(tag, isOn: Binding(
+                                get: { apiManager.sessionTags.contains(tag) },
+                                set: { isOn in
+                                    if isOn {
+                                        apiManager.sessionTags.append(tag)
+                                    } else {
+                                        apiManager.sessionTags.removeAll { $0 == tag }
+                                    }
+                                }
+                            ))
+                        }
+                    } label: {
+                        Text(apiManager.sessionTags.isEmpty
+                             ? NSLocalizedString("select_tags", comment: "")
+                             : apiManager.sessionTags.joined(separator: ", "))
+                    }
+                    // same rules as the description; an empty menu would close the popover right away
+                    .disabled(timerModel.isActive == true || apiManager.activeActivity == nil || tagOptions.isEmpty)
+                    .onAppear {
+                        apiManager.fetchTags()
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -533,7 +567,7 @@ struct PopupView: View {
 
                     HStack(alignment: .center, spacing: 10) {
                         Button(action: {
-                            if let url = URL(string: "https://github.com/Foraum-GmbH/kimai-clock") {
+                            if let url = URL(string: "https://github.com/clemens-code/kimai-clock") {
                                 NSWorkspace.shared.open(url)
                             }
                         }) {
@@ -541,25 +575,25 @@ struct PopupView: View {
                         }
 
                         Button(action: {
+                            if let url = URL(string: "https://github.com/Foraum-GmbH/kimai-clock") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            Label(NSLocalizedString("original_project_button", comment: ""), systemImage: "link")
+                        }
+                    }
+
+                    HStack(alignment: .center, spacing: 10) {
+                        Button(action: {
                             if let url = URL(string: "https://www.kimai.org/de/") {
                                 NSWorkspace.shared.open(url)
                             }
                         }) {
                             Label(NSLocalizedString("kimai_button", comment: ""), systemImage: "link")
                         }
-                    }
-
-                    HStack(alignment: .center, spacing: 10) {
-                        Button(action: {
-                            if let url = URL(string: "https://paypal.me/undeaDD") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        }) {
-                            Label(NSLocalizedString("buymeacoffee_button", comment: ""), systemImage: "cup.and.saucer")
-                        }
 
                         Button(action: {
-                            if let url = URL(string: "mailto:feedback@foraum.de") {
+                            if let url = URL(string: "https://github.com/clemens-code/kimai-clock/issues") {
                                 NSWorkspace.shared.open(url)
                             }
                         }) {
@@ -580,7 +614,7 @@ struct PopupView: View {
 
             if updateManager.isUpdateAvailable {
                 Button {
-                    if let url = URL(string: "https://github.com/Foraum-GmbH/kimai-clock/releases/latest") {
+                    if let url = URL(string: "https://github.com/clemens-code/kimai-clock/releases/latest") {
                         NSWorkspace.shared.open(url)
                     }
                 } label: {
@@ -602,12 +636,18 @@ struct PopupView: View {
         .onChange(of: popoverState.isPresented) { _, _ in
             openSection = "recent_activities"
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { notification in
-            // picker menus mark their current selection, context menus don't -> keep the popover open for pickers
-            let isPickerMenu = (notification.object as? NSMenu)?.items.contains { $0.state == .on } ?? false
-            if !contextMenuActionTaken && !isPickerMenu {
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            // context menus open on right-click / ctrl-click, dropdowns on a plain left click
+            guard let event = NSApp.currentEvent else { return }
+            isContextMenuOpen = event.type == .rightMouseDown
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            // only a context menu dismissed without an action closes the popover, dropdowns never do
+            if isContextMenuOpen && !contextMenuActionTaken {
                 closePopup()
             }
+            isContextMenuOpen = false
             contextMenuActionTaken = false
         }
         .overlay(

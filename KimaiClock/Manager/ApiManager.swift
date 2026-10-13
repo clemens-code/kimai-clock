@@ -36,6 +36,10 @@ struct Project: Decodable, Identifiable {
     let name: String
 }
 
+struct Tag: Decodable {
+    let name: String
+}
+
 struct ServerVersion: Codable {
     let versionId: Int
     let copyright: String
@@ -48,12 +52,14 @@ struct Timesheet: Codable {
     let id: Int?
     let begin: String?
     var description: String?
+    var tags: [String]?
 }
 
 private struct TimesheetResponse: Codable {
     let id: Int
     let begin: String?
     let description: String?
+    let tags: [String]?
     let activity: ActivityResponse
     let project: ProjectResponse?
 
@@ -84,7 +90,8 @@ extension TimesheetResponse {
             activity: activity,
             id: id,
             begin: begin,
-            description: description
+            description: description,
+            tags: tags
         )
     }
 }
@@ -103,6 +110,7 @@ class ApiManager: ObservableObject {
             if oldValue?.uniqueId != activeActivity?.uniqueId {
                 // new or ended session -> forget the description of the previous one
                 sessionDescription = ""
+                sessionTags = []
                 lastTimesheetId = nil
             }
             syncToWidget()
@@ -111,6 +119,9 @@ class ApiManager: ObservableObject {
 
     /// Description of the current session. Survives a pause, so resuming reuses it.
     @Published private(set) var sessionDescription: String = ""
+    /// Tags of the current session, editable before start and while paused. Survive a pause like the description.
+    @Published var sessionTags: [String] = []
+    @Published var availableTags: [String] = []
 
     private func syncToWidget() {
         WidgetSync.save(activity: activeActivity)
@@ -219,6 +230,7 @@ class ApiManager: ObservableObject {
                         self.activeTimesheetId = timesheetId
                         self.activeActivity = timer.activity
                         self.sessionDescription = timer.description ?? ""
+                        self.sessionTags = timer.tags ?? []
 
                         let beginDate = self.secondsFormatter.date(from: timer.begin ?? "") ?? Date()
                         let now = Date()
@@ -312,6 +324,13 @@ class ApiManager: ObservableObject {
             .eraseToAnyPublisher()
     }
 
+    func fetchTags() {
+        // Kimai returns an empty list without a name filter; an empty term matches all visible tags
+        getList("/api/tags/find", [URLQueryItem(name: "name", value: "")], of: Tag.self)
+            .map { $0.map(\.name) }
+            .assign(to: &$availableTags)
+    }
+
     private func getList<Element: Decodable>(_ path: String, _ queryItems: [URLQueryItem], of _: Element.Type) -> AnyPublisher<[Element], Never> {
         guard let baseURL = serverIP,
               var components = URLComponents(string: "\(baseURL)\(path)") else {
@@ -363,6 +382,9 @@ class ApiManager: ObservableObject {
         ]
         if !trimmedDescription.isEmpty {
             body["description"] = trimmedDescription
+        }
+        if !sessionTags.isEmpty {
+            body["tags"] = sessionTags.joined(separator: ",")
         }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
