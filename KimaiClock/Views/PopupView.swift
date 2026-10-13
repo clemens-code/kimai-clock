@@ -567,7 +567,7 @@ struct PopupView: View {
 
                     HStack(alignment: .center, spacing: 10) {
                         Button(action: {
-                            if let url = URL(string: "https://github.com/Foraum-GmbH/kimai-clock") {
+                            if let url = URL(string: "https://github.com/clemens-code/kimai-clock") {
                                 NSWorkspace.shared.open(url)
                             }
                         }) {
@@ -575,25 +575,25 @@ struct PopupView: View {
                         }
 
                         Button(action: {
+                            if let url = URL(string: "https://github.com/Foraum-GmbH/kimai-clock") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            Label(NSLocalizedString("original_project_button", comment: ""), systemImage: "link")
+                        }
+                    }
+
+                    HStack(alignment: .center, spacing: 10) {
+                        Button(action: {
                             if let url = URL(string: "https://www.kimai.org/de/") {
                                 NSWorkspace.shared.open(url)
                             }
                         }) {
                             Label(NSLocalizedString("kimai_button", comment: ""), systemImage: "link")
                         }
-                    }
-
-                    HStack(alignment: .center, spacing: 10) {
-                        Button(action: {
-                            if let url = URL(string: "https://paypal.me/undeaDD") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        }) {
-                            Label(NSLocalizedString("buymeacoffee_button", comment: ""), systemImage: "cup.and.saucer")
-                        }
 
                         Button(action: {
-                            if let url = URL(string: "mailto:feedback@foraum.de") {
+                            if let url = URL(string: "https://github.com/clemens-code/kimai-clock/issues") {
                                 NSWorkspace.shared.open(url)
                             }
                         }) {
@@ -614,7 +614,7 @@ struct PopupView: View {
 
             if updateManager.isUpdateAvailable {
                 Button {
-                    if let url = URL(string: "https://github.com/Foraum-GmbH/kimai-clock/releases/latest") {
+                    if let url = URL(string: "https://github.com/clemens-code/kimai-clock/releases/latest") {
                         NSWorkspace.shared.open(url)
                     }
                 } label: {

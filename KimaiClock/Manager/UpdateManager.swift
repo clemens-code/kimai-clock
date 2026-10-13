@@ -37,7 +37,7 @@ class UpdateManager: ObservableObject {
     }
 
     private func fetchLatestGitHubVersion() {
-        guard let url = URL(string: "https://api.github.com/repos/Foraum-GmbH/kimai-clock/releases/latest") else { return }
+        guard let url = URL(string: "https://api.github.com/repos/clemens-code/kimai-clock/releases/latest") else { return }
 
         URLSession.shared.dataTaskPublisher(for: url)
             .receive(on: DispatchQueue.main)
