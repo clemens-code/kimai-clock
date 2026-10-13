@@ -621,6 +621,23 @@
         }
       }
     },
+    "select_tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags auswählen…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select Tags…"
+          }
+        }
+      }
+    },
     "server_status" : {
       "shouldTranslate" : false
     },
@@ -793,6 +810,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fetch active server timer:"
+          }
+        }
+      }
+    },
+    "tags_label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags"
           }
         }
       }

@@ -291,6 +291,36 @@ struct PopupView: View {
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         // editable before start and while paused (applies to the resumed timesheet)
                         .disabled(timerModel.isActive == true || apiManager.activeActivity == nil)
+
+                    Text(NSLocalizedString("tags_label", comment: ""))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Menu {
+                        // tags of a remote timer may be missing from the fetched list -> show them too
+                        ForEach(apiManager.availableTags + apiManager.sessionTags.filter { !apiManager.availableTags.contains($0) }, id: \.self) { tag in
+                            Toggle(tag, isOn: Binding(
+                                get: { apiManager.sessionTags.contains(tag) },
+                                set: { isOn in
+                                    contextMenuActionTaken = true
+                                    if isOn {
+                                        apiManager.sessionTags.append(tag)
+                                    } else {
+                                        apiManager.sessionTags.removeAll { $0 == tag }
+                                    }
+                                }
+                            ))
+                        }
+                    } label: {
+                        Text(apiManager.sessionTags.isEmpty
+                             ? NSLocalizedString("select_tags", comment: "")
+                             : apiManager.sessionTags.joined(separator: ", "))
+                    }
+                    // same rules as the description
+                    .disabled(timerModel.isActive == true || apiManager.activeActivity == nil)
+                    .onAppear {
+                        apiManager.fetchTags()
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
