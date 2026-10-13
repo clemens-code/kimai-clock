@@ -26,6 +26,7 @@ struct PopupView: View {
     @State private var showEditDescriptionAlert = false
     @State private var timesheetDescription = ""
     @State private var contextMenuActionTaken = false
+    @State private var isContextMenuOpen = false
 
     let closePopup: () -> Void
     let startRemoteTimerProcess: (Double) -> Void
@@ -306,7 +307,6 @@ struct PopupView: View {
                             Toggle(tag, isOn: Binding(
                                 get: { apiManager.sessionTags.contains(tag) },
                                 set: { isOn in
-                                    contextMenuActionTaken = true
                                     if isOn {
                                         apiManager.sessionTags.append(tag)
                                     } else {
@@ -636,12 +636,18 @@ struct PopupView: View {
         .onChange(of: popoverState.isPresented) { _, _ in
             openSection = "recent_activities"
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { notification in
-            // picker menus mark their current selection, context menus don't -> keep the popover open for pickers
-            let isPickerMenu = (notification.object as? NSMenu)?.items.contains { $0.state == .on } ?? false
-            if !contextMenuActionTaken && !isPickerMenu {
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            // context menus open on right-click / ctrl-click, dropdowns on a plain left click
+            guard let event = NSApp.currentEvent else { return }
+            isContextMenuOpen = event.type == .rightMouseDown
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            // only a context menu dismissed without an action closes the popover, dropdowns never do
+            if isContextMenuOpen && !contextMenuActionTaken {
                 closePopup()
             }
+            isContextMenuOpen = false
             contextMenuActionTaken = false
         }
         .overlay(
