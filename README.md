@@ -2,10 +2,9 @@
 
 A native macOS menu bar app for Kimai 2 time tracking.
 
-[![macOS](https://img.shields.io/badge/macOS-15%2B-1c1c1e?logo=apple&logoColor=white)](https://github.com/Foraum-GmbH/kimai-clock)
+[![macOS](https://img.shields.io/badge/macOS-15%2B-1c1c1e?logo=apple&logoColor=white)](https://github.com/clemens-code/kimai-clock)
 [![Swift](https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![Kimai](https://img.shields.io/badge/Kimai-2.x-007acc)](https://www.kimai.org/)
-[![Notarized](https://img.shields.io/badge/Apple-Notarized-success)](https://developer.apple.com/developer-id/)
 [![License](https://img.shields.io/badge/License-MIT-gray)](./LICENSE.md)
 [![Tests](https://img.shields.io/badge/Tests-105-success)](#testing)
 [![Coverage](https://img.shields.io/badge/Coverage%20(logic)-77%25-success)](#testing)
@@ -28,7 +27,7 @@ KimaiClock brings your [Kimai](https://www.kimai.org/) time tracking into the ma
 - **App Launch Reminders**: Prompts you to start tracking when selected developer tools (VS Code, PhpStorm, Xcode) launch.
 - **Automation Ready**: First-class URL schemes for macOS Shortcuts, Raycast, Alfred, and shell scripts.
 - **Desktop Widget**: Native widget extension showing active timers and elapsed duration.
-- **Native and Secure**: Built with Swift 6 and SwiftUI, zero external dependencies, sandboxed, and Apple-notarized.
+- **Native**: Built with Swift 6 and SwiftUI, zero external dependencies.
 - **Localization**: English and German interface support.
 
 ## Controls and Shortcuts
@@ -62,13 +61,13 @@ When your Mac goes to sleep, the running timesheet is stopped at the moment of s
 
 ## Installation
 
+> [!IMPORTANT]
+> Builds of this fork are ad-hoc signed and **not notarized by Apple**. The Homebrew cask removes the quarantine flag for you; for a manual install see below. The desktop widget may not work in these builds.
+
 ### Homebrew (Recommended)
 
-Install the cask via the official tap:
-
 ```bash
-brew tap foraum-gmbh/foraum https://github.com/Foraum-GmbH/homebrew-foraum
-brew install --cask foraum-gmbh/foraum/kimai-clock
+brew install --cask clemens-code/tap/kimai-clock
 ```
 
 To update or remove:
@@ -76,14 +75,18 @@ To update or remove:
 ```bash
 brew upgrade --cask kimai-clock
 brew uninstall --cask kimai-clock
-brew untap foraum-gmbh/foraum
+brew untap clemens-code/tap
 ```
 
 ### Direct Download
 
 1. Download the latest `.dmg` release from the [Releases](../../releases) page.
 2. Open the disk image and drag **KimaiClock.app** into your **Applications** folder.
-3. Launch KimaiClock, open Settings from the popover, and enter your Kimai server URL and API token.
+3. Allow the first launch (the app is not notarized):
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/KimaiClock.app
+   ```
+4. Launch KimaiClock, open Settings from the popover, and enter your Kimai server URL and API token.
 
 ## URL Schemes and Automation
 
