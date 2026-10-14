@@ -17,7 +17,7 @@ swiftlint --strict          # same command CI runs, from repo root
 
 ## Project layout
 
-- `KimaiClock/` — app target, source of truth. `KimaiWidget/` — widget extension. `KimaiClockTests/` — unit test target. `docs/` is an unrelated GitHub Pages site.
+- `KimaiClock/` — app target, source of truth. `KimaiWidget/` — widget extension. `KimaiClockTests/` — unit test target.
 - Targets use Xcode 16 **synchronized folders**: a new `.swift` file dropped into `KimaiClock/`, `KimaiWidget/`, or `KimaiClockTests/` joins that target automatically. Do not hand-edit `project.pbxproj` to add files.
 - `Info.plist` and `.swiftlint.yml` are membership exceptions (not compiled). `KimaiClock/Manager/WidgetSync.swift` and `KimaiClock/Extensions/Color.swift` are wired into the **widget** target too via exception sets — treat edits there as widget-breaking (WidgetSync references the app-side `Activity` type while the widget declares its own `struct Activity`) and always build both targets.
 
