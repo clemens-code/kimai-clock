@@ -1,4 +1,4 @@
-name: Build, Sign, Notarize and Release macOS App
+name: Build and Release macOS App
 
 permissions:
   contents: write
@@ -13,6 +13,7 @@ env:
   XCODE_PROJECT: "KimaiClock.xcodeproj"
   SCHEME: "KimaiClock"
   CONFIGURATION: "Release"
+  TAP_REPO: "clemens-code/homebrew-tap"
 
 jobs:
   build-and-release:
@@ -20,7 +21,7 @@ jobs:
     concurrency:
       group: release
       cancel-in-progress: false
-    
+
     steps:
     - name: Validate tag
       run: |
@@ -28,10 +29,9 @@ jobs:
 
         delete_tag() {
           echo "Deleting invalid tag '$TAG_NAME' from remote..."
-          gh api "repos/Foraum-GmbH/kimai-clock/git/refs/tags/$TAG_NAME" --method DELETE
+          gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" --method DELETE
         }
 
-        # Require v prefix for consistent tag formatting
         if ! [[ "$TAG_NAME" == v* ]]; then
           echo "Error: tag must start with 'v' (e.g. v1.2.3), got '$TAG_NAME'"
           delete_tag
@@ -40,15 +40,14 @@ jobs:
 
         VERSION="${TAG_NAME#v}"
 
-        # Validate semver format (X.Y.Z digits only)
         if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "Error: '$TAG_NAME' is not valid semver (expected vX.Y.Z)"
           delete_tag
           exit 1
         fi
 
-        # Ensure new version is strictly greater than the current latest release
-        LATEST=$(gh release view --repo Foraum-GmbH/kimai-clock --json tagName --jq .tagName 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        LATEST=${LATEST:-0.0.0}
         echo "Current latest release: $LATEST — new version: $VERSION"
         if ! python3 -c "a=tuple(int(x) for x in '$LATEST'.split('.'));b=tuple(int(x) for x in '$VERSION'.split('.'));exit(0 if b>a else 1)"; then
           echo "Error: version $VERSION is not greater than current latest $LATEST"
@@ -56,10 +55,11 @@ jobs:
           exit 1
         fi
       env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
+        GH_TOKEN: ${{ github.token }}
 
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
     - name: Bump version and build number
       id: version_bump
       run: |
@@ -81,162 +81,44 @@ jobs:
       uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
       with:
         xcode-version: latest-stable
-        
+
     - name: Install create-dmg
       run: brew install create-dmg
-      
-    - name: Import Code-Signing Certificates
-      uses: Apple-Actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
-      with:
-        p12-file-base64: ${{ secrets.CERTIFICATES_P12 }}
-        p12-password: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
 
-    - name: Install Provisioning Profiles
-      env:
-        PROVISIONING_PROFILE_APP: ${{ secrets.PROVISIONING_PROFILE_APP }}
-        PROVISIONING_PROFILE_WIDGET: ${{ secrets.PROVISIONING_PROFILE_WIDGET }}
-      run: |
-        mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-
-        echo "$PROVISIONING_PROFILE_APP" | base64 --decode > /tmp/app.provisionprofile
-        echo "$PROVISIONING_PROFILE_WIDGET" | base64 --decode > /tmp/widget.provisionprofile
-
-        APP_UUID=$(security cms -D -i /tmp/app.provisionprofile | plutil -extract UUID raw -)
-        WIDGET_UUID=$(security cms -D -i /tmp/widget.provisionprofile | plutil -extract UUID raw -)
-
-        cp /tmp/app.provisionprofile ~/Library/MobileDevice/Provisioning\ Profiles/$APP_UUID.provisionprofile
-        cp /tmp/widget.provisionprofile ~/Library/MobileDevice/Provisioning\ Profiles/$WIDGET_UUID.provisionprofile
-
-        echo "APP_PROFILE_UUID=$APP_UUID" >> $GITHUB_ENV
-        echo "WIDGET_PROFILE_UUID=$WIDGET_UUID" >> $GITHUB_ENV
-
-    - name: Decode Apple API Key
-      env:
-        APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-      run: |
-        echo "Decoding APPLE_API_KEY..."
-        if ! echo "$APPLE_API_KEY" | base64 --decode > AuthKey.p8; then
-          echo "Error: Failed to decode base64 APPLE_API_KEY"
-          exit 1
-        fi
-        if [ ! -s "AuthKey.p8" ]; then
-          echo "Error: AuthKey.p8 is empty"
-          exit 1
-        fi
-        echo "AuthKey.p8 created successfully ($(wc -c < AuthKey.p8) bytes)"
-
+    # no Apple Developer account -> build unsigned, then ad-hoc sign so the bundle has a valid seal
     - name: Build App
-      env:
-        APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-        APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       run: |
         xcodebuild \
           -project "$XCODE_PROJECT" \
           -scheme "$SCHEME" \
           -configuration "$CONFIGURATION" \
-          -archivePath "$APP_NAME.xcarchive" \
           -destination "generic/platform=macOS" \
-          -allowProvisioningUpdates \
-          -authenticationKeyPath "$GITHUB_WORKSPACE/AuthKey.p8" \
-          -authenticationKeyID "$APPLE_API_KEY_ID" \
-          -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
-          archive
-          
-    - name: Export App
-      env:
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      run: |
-        # Create ExportOptions.plist with manual signing using installed profiles
-        cat > ExportOptions.plist << EOF
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>method</key>
-            <string>developer-id</string>
-            <key>destination</key>
-            <string>export</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>signingCertificate</key>
-            <string>Developer ID Application</string>
-            <key>teamID</key>
-            <string>$APPLE_TEAM_ID</string>
-            <key>provisioningProfiles</key>
-            <dict>
-                <key>de.foraum.KimaiClock</key>
-                <string>$APP_PROFILE_UUID</string>
-                <key>de.foraum.KimaiClock.KimaiWidget</key>
-                <string>$WIDGET_PROFILE_UUID</string>
-            </dict>
-        </dict>
-        </plist>
-        EOF
+          -derivedDataPath build \
+          CODE_SIGNING_ALLOWED=NO \
+          build
 
-        # Export the archive
-        xcodebuild \
-          -archivePath "$APP_NAME.xcarchive" \
-          -exportArchive \
-          -exportPath export \
-          -exportOptionsPlist ExportOptions.plist
+        mkdir -p export
+        cp -R "build/Build/Products/$CONFIGURATION/$APP_NAME.app" export/
+        codesign --force --deep --sign - "export/$APP_NAME.app"
+        codesign --verify --deep --verbose "export/$APP_NAME.app"
+        lipo -archs "export/$APP_NAME.app/Contents/MacOS/$APP_NAME"
 
     - name: Create DMG
       run: |
-        # Find the actual .app file
-        APP_FILE=$(find export/ -name "*.app" -type d | head -1)
-        if [ -z "$APP_FILE" ]; then
-          echo "Error: No .app file found in export directory"
-          exit 1
-        fi
-        
-        echo "Using app file: $APP_FILE"
-        APP_NAME_ACTUAL=$(basename "$APP_FILE" .app)
-        echo "Actual app name: $APP_NAME_ACTUAL"
-        
-        # Create a DMG file
         create-dmg \
-          --volname "$APP_NAME_ACTUAL" \
+          --volname "$APP_NAME" \
           --background "$GITHUB_WORKSPACE/assets/background.tiff" \
           --volicon "$GITHUB_WORKSPACE/assets/volicon.icns" \
           --window-size 600 400 \
           --icon-size 128 \
-          --icon "$APP_NAME_ACTUAL.app" 150 150 \
-          --hide-extension "$APP_NAME_ACTUAL.app" \
+          --icon "$APP_NAME.app" 150 150 \
+          --hide-extension "$APP_NAME.app" \
           --app-drop-link 450 150 \
-          "$APP_NAME_ACTUAL.dmg" \
+          "$APP_NAME.dmg" \
           "export/" \
         || echo "Warning: create-dmg completed with warnings (this is often normal)"
 
-    - name: Sign DMG
-      env:
-        DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
-      run: |
-        # Sign the DMG
-        codesign --force --sign "$DEVELOPER_ID_APPLICATION" "$APP_NAME.dmg"
-        
-        # Verify signing
-        codesign --verify --verbose "$APP_NAME.dmg"
-
-    - name: Notarize DMG
-      env:
-        APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-        APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      run: |
-        # Submit DMG for notarization
-        xcrun notarytool submit "$APP_NAME.dmg" \
-          --key AuthKey.p8 \
-          --key-id "$APPLE_API_KEY_ID" \
-          --issuer "$APPLE_API_ISSUER" \
-          --timeout 30m \
-          --wait
-          
-        # Staple the notarization to DMG
-        xcrun stapler staple "$APP_NAME.dmg"
-
-    - name: Verify Notarization
-      run: |
-        # Verify the notarization was successful
-        spctl --assess --type open --context context:primary-signature "$APP_NAME.dmg"
+        test -s "$APP_NAME.dmg"
 
     - name: Compute DMG SHA256
       id: dmg_info
@@ -251,28 +133,33 @@ jobs:
         VERSION="${GITHUB_REF#refs/tags/}"
         VERSION="${VERSION#v}"
         echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
-        echo "release_name=v$VERSION" >> $GITHUB_OUTPUT
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        
+
     - name: Create Release
       uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
       with:
         tag_name: ${{ steps.release_info.outputs.tag_name }}
-        name: ${{ steps.release_info.outputs.release_name }}
+        name: ${{ steps.release_info.outputs.tag_name }}
         draft: false
         prerelease: false
         files: |
           ${{ env.APP_NAME }}.dmg
         body: |
-          ## Installation
+          ### Install with Homebrew (recommended)
 
-          1. Download the DMG file
-          2. Double-click to mount the disk image
-          3. Drag the app to your Applications folder
+          ```bash
+          brew install --cask ${{ env.TAP_REPO }}/kimai-clock
+          ```
 
-          **Note**: This app is signed and notarized by Apple.
-      env:
-        GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          ### Manual install
+
+          1. Download `KimaiClock.dmg` and drag the app into your Applications folder.
+          2. The app is **not notarized by Apple**, so macOS blocks the first launch. Allow it once with:
+             ```bash
+             xattr -dr com.apple.quarantine /Applications/KimaiClock.app
+             ```
+
+          SHA256: `${{ steps.dmg_info.outputs.sha256 }}`
 
     - name: Commit version bump to main
       run: |
@@ -280,32 +167,50 @@ jobs:
         NEW_BUILD="${{ steps.version_bump.outputs.new_build }}"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git config user.name "github-actions[bot]"
-        git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/Foraum-GmbH/kimai-clock.git"
         git add KimaiClock.xcodeproj/project.pbxproj
         git commit -m "chore: bump version to $VERSION (build $NEW_BUILD)"
         git push origin HEAD:main
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
 
-    - name: Update Homebrew cask in homebrew-foraum
+    - name: Update Homebrew cask
       run: |
         VERSION="${{ steps.release_info.outputs.version }}"
         SHA256="${{ steps.dmg_info.outputs.sha256 }}"
 
-        CASK_CONTENT=$(printf 'cask "kimai-clock" do\n  version "%s"\n  sha256 "%s"\n  url "https://github.com/Foraum-GmbH/kimai-clock/releases/download/v#{version}/KimaiClock.dmg"\n  name "KimaiClock"\n  desc "Track and manage Kimai 2 time entries from the menu bar"\n  homepage "https://github.com/Foraum-GmbH/kimai-clock"\n  app "KimaiClock.app"\nend\n' "$VERSION" "$SHA256")
-        CURRENT_SHA=$(gh api repos/Foraum-GmbH/homebrew-foraum/contents/Casks/kimai-clock.rb --jq .sha)
+        cat > kimai-clock.rb << EOF
+        cask "kimai-clock" do
+          version "$VERSION"
+          sha256 "$SHA256"
 
-        gh api repos/Foraum-GmbH/homebrew-foraum/contents/Casks/kimai-clock.rb \
+          url "https://github.com/$GITHUB_REPOSITORY/releases/download/v#{version}/KimaiClock.dmg"
+          name "KimaiClock"
+          desc "Track and manage Kimai 2 time entries from the menu bar"
+          homepage "https://github.com/$GITHUB_REPOSITORY"
+
+          depends_on macos: :sequoia
+
+          app "KimaiClock.app"
+
+          # not notarized (no Apple Developer account) -> drop the quarantine flag so Gatekeeper allows the launch
+          postflight_steps do
+            run "/usr/bin/xattr",
+                args:           ["-dr", "com.apple.quarantine", "{{appdir}}/KimaiClock.app"],
+                writable_paths: ["{{appdir}}/KimaiClock.app"]
+          end
+
+          uninstall quit: "de.foraum.KimaiClock"
+        end
+        EOF
+        cat kimai-clock.rb
+
+        # first release creates the file, later ones need its current sha
+        CURRENT_SHA=$(gh api "repos/$TAP_REPO/contents/Casks/kimai-clock.rb" --jq .sha 2>/dev/null || true)
+        gh api "repos/$TAP_REPO/contents/Casks/kimai-clock.rb" \
           --method PUT \
           -f message="chore: bump kimai-clock to $VERSION" \
-          -f content="$(echo "$CASK_CONTENT" | base64 | tr -d '\n')" \
-          -f sha="$CURRENT_SHA"
+          -f content="$(base64 < kimai-clock.rb | tr -d '\n')" \
+          ${CURRENT_SHA:+-f sha="$CURRENT_SHA"}
       env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
-
-    - name: Clean up local Secrets
-      if: always()
-      run: rm -f AuthKey.p8
+        GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     - name: Rollback release on failure
       if: failure()
@@ -316,10 +221,10 @@ jobs:
           exit 0
         fi
         echo "Rolling back release v$VERSION..."
-        gh release delete "v$VERSION" --repo Foraum-GmbH/kimai-clock --yes 2>/dev/null && echo "Release deleted." || echo "Release not found, skipping."
-        gh api "repos/Foraum-GmbH/kimai-clock/git/refs/tags/v$VERSION" --method DELETE 2>/dev/null && echo "Tag deleted." || echo "Tag not found, skipping."
+        gh release delete "v$VERSION" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null && echo "Release deleted." || echo "Release not found, skipping."
+        gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/v$VERSION" --method DELETE 2>/dev/null && echo "Tag deleted." || echo "Tag not found, skipping."
       env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
+        GH_TOKEN: ${{ github.token }}
 
     - name: Job summary
       if: always()
@@ -327,22 +232,9 @@ jobs:
         VERSION="${{ steps.release_info.outputs.version }}"
         SHA256="${{ steps.dmg_info.outputs.sha256 }}"
         if [ -n "$VERSION" ]; then
-          RELEASE_URL="https://github.com/Foraum-GmbH/kimai-clock/releases/tag/v$VERSION"
+          RELEASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
           printf '## Release summary\n\n| | |\n|---|---|\n| **Version** | `v%s` |\n| **SHA256** | `%s` |\n| **Release** | %s |\n' \
             "$VERSION" "$SHA256" "$RELEASE_URL" >> $GITHUB_STEP_SUMMARY
         else
           echo "## Release failed — no version was produced." >> $GITHUB_STEP_SUMMARY
         fi
-
-    - name: Notify kimai/kimai of new release
-      if: false
-      run: |
-        VERSION="${{ steps.release_info.outputs.version }}"
-        RELEASE_URL="https://github.com/Foraum-GmbH/kimai-clock/releases/tag/v$VERSION"
-        BODY=$(printf '## KimaiClock %s is available\n\nKimaiClock (https://github.com/Foraum-GmbH/kimai-clock) — a macOS menu bar app for tracking Kimai time entries — has been updated to **%s**.\n\n- **Release:** %s\n\nPlease update the listing in your marketplace/addon directory if applicable.' "$VERSION" "$VERSION" "$RELEASE_URL")
-        gh issue create \
-          --repo kimai/kimai \
-          --title "KimaiClock $VERSION released" \
-          --body "$BODY"
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}

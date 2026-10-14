@@ -44,7 +44,7 @@ swiftlint --strict          # same command CI runs, from repo root
 
 ## Release
 
-- Releases are tag-driven: push `vX.Y.Z` (strict semver, must be greater than the latest release) and CI archives, signs, notarizes, publishes the DMG, then commits the version/build bump back to `main` and updates the Homebrew tap.
+- Releases are tag-driven: push `vX.Y.Z` (strict semver, must be greater than the latest release) and CI builds an ad-hoc signed (not notarized, no Apple Developer account) Release build, publishes the DMG as a GitHub release, commits the version/build bump back to `main` and updates the cask in `clemens-code/homebrew-tap` (needs the `HOMEBREW_TAP_TOKEN` secret).
 - **Do not** edit `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.pbxproj` or add `CHANGELOG.md` entries — CI/maintainer owns both.
 - Work on a feature branch and open a PR to `main`; the template asks for a linked issue and your Xcode/macOS/Kimai server versions. `.github/CODEOWNERS` requires `@undeaDD` review.
 - A TruffleHog pre-commit hook scans for secrets (`pre-commit install`). Never commit real Kimai tokens or `.env` files.
